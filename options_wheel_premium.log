@@ -1,0 +1,5 @@
+2025-04-29 15:00:54,055 - root - WARNING - No previous position state found, starting fresh
+2025-05-12 06:53:19,942 - root - WARNING - Invalid JSON in position state file, starting fresh
+2025-05-12 06:53:19,943 - root - INFO - Starting Premium-Optimized Options Wheel Strategy
+2025-05-12 06:53:25,168 - root - INFO - Selected 100 stocks for options wheel
+2025-05-12 06:53:25,204 - root - INFO - Market not yet open. Sleeping for 396.58 minutes

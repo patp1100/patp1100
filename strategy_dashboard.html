@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Premium-Optimized Options Wheel Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/luxon@3.0.1"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-luxon@1.2.0"></script>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css" rel="stylesheet">
+    <style>
+        /* (Keep all the same CSS styles from previous dashboard) */
+    </style>
+</head>
+<body>
+    <!-- (Keep all the same HTML structure from previous dashboard) -->
+
+    <script>
+        // API configuration
+        const API_BASE_URL = 'http://localhost:5000/api';
+
+        // Chart instances
+        let premiumChart;
+        let statusChart;
+
+        // Initialize the dashboard
+        document.addEventListener('DOMContentLoaded', function() {
+            initializeCharts();
+            fetchData();
+
+            // Set up refresh button
+            document.getElementById('refreshBtn').addEventListener('click', fetchData);
+
+            // Auto-refresh every 60 seconds
+            setInterval(fetchData, 60000);
+        });
+
+        function initializeCharts() {
+            const premiumCtx = document.getElementById('premiumChart').getContext('2d');
+            premiumChart = new Chart(premiumCtx, {
+                type: 'bar',
+                data: {
+                    labels: [],
+                    datasets: [{
+                        label: 'Premium Collected',
+                        data: [],
+                        backgroundColor: '#3498db',
+                        borderColor: '#2980b9',
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            title: {
+                                display: true,
+                                text: 'Premium ($)'
+                            }
+                        }
+                    }
+                }
+            });
+
+            const statusCtx = document.getElementById('statusChart').getContext('2d');
+            statusChart = new Chart(statusCtx, {
+                type: 'doughnut',
+                data: {
+                    labels: ['Puts Sold', 'Assigned', 'Calls Sold', 'Call Assigned'],
+                    datasets: [{
+                        data: [0, 0, 0, 0],
+                        backgroundColor: [
+                            '#e74c3c',
+                            '#f39c12',
+                            '#2ecc71',
+                            '#9b59b6'
+                        ],
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    plugins: {
+                        legend: {
+                            position: 'right'
+                        }
+                    }
+                }
+            });
+        }
+
+        async function fetchData() {
+            try {
+                const response = await fetch(`${API_BASE_URL}/dashboard`);
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                const data = await response.json();
+                updateDashboard(data);
+                document.getElementById('lastUpdated').textContent =
+                    `Last updated: ${new Date().toLocaleString()}`;
+            } catch (error) {
+                console.error('Error fetching data:', error);
+                document.getElementById('lastUpdated').textContent =
+                    `Last updated: Error - ${new Date().toLocaleString()}`;
+            }
+        }
+
+        function updateDashboard(data) {
+            // Update summary cards
+            document.getElementById('activePositions').textContent =
+                data.metrics.active_positions;
+            document.getElementById('maxPositions').textContent =
+                data.config.max_positions;
+            document.getElementById('totalPremiums').textContent =
+                `$${data.metrics.total_premium}`;
+            document.getElementById('portfolioRisk').textContent =
+                `${data.metrics.portfolio_risk}%`;
+            document.getElementById('maxRisk').textContent =
+                `${data.config.max_risk}%`;
+            document.getElementById('nextAction').textContent =
+                data.metrics.next_action;
+            document.getElementById('nextActionTime').textContent =
+                'Based on current positions';
+
+            // Update positions table
+            const positionsTable = document.getElementById('positionsTable').querySelector('tbody');
+            positionsTable.innerHTML = '';
+
+            Object.entries(data.positions).forEach(([symbol, position]) => {
+                const row = document.createElement('tr');
+
+                // Determine badge class based on position state
+                let badgeClass, typeText;
+                switch(position.state) {
+                    case 'PUT_SOLD':
+                        badgeClass = 'badge-put';
+                        typeText = 'Put';
+                        break;
+                    case 'ASSIGNED':
+                        badgeClass = 'badge-assigned';
+                        typeText = 'Assigned';
+                        break;
+                    case 'CALL_SOLD':
+                        badgeClass = 'badge-call';
+                        typeText = 'Call';
+                        break;
+                    case 'CALL_ASSIGNED':
+                        badgeClass = 'badge-roll';
+                        typeText = 'Called';
+                        break;
+                    default:
+                        badgeClass = 'bg-secondary';
+                        typeText = 'Unknown';
+                }
+
+                // Determine premium class
+                const premiumPct = parseFloat(position.premium_percentage || 0);
+                let premiumClass = 'premium-low';
+                if (premiumPct >= 4.5) premiumClass = 'premium-high';
+                else if (premiumPct >= 3) premiumClass = 'premium-medium';
+
+                row.innerHTML = `
+                    <td>${symbol}</td>
+                    <td><span class="badge ${badgeClass}">${typeText}</span></td>
+                    <td>$${position.strike || 'N/A'}</td>
+                    <td class="${premiumClass}">$${position.premiums || 0} (${position.premium_percentage || 0}%)</td>
+                    <td>${position.state ? position.state.replace('_', ' ') : 'N/A'}</td>
+                    <td>${position.dte_at_open || 0}d</td>
+                `;
+                positionsTable.appendChild(row);
+            });
+
+            // Update trades table
+            const tradesTable = document.getElementById('tradesTable').querySelector('tbody');
+            tradesTable.innerHTML = '';
+
+            data.trade_history.forEach(trade => {
+                const row = document.createElement('tr');
+
+                // Determine badge class based on trade type
+                let badgeClass;
+                switch(trade.type) {
+                    case 'PUT_SOLD':
+                        badgeClass = 'badge-put';
+                        break;
+                    case 'ASSIGNED':
+                        badgeClass = 'badge-assigned';
+                        break;
+                    case 'CALL_SOLD':
+                        badgeClass = 'badge-call';
+                        break;
+                    case 'CALL_ASSIGNED':
+                        badgeClass = 'badge-roll';
+                        break;
+                    default:
+                        badgeClass = 'bg-secondary';
+                }
+
+                // Format timestamp
+                const tradeTime = new Date(trade.timestamp);
+                const formattedTime = tradeTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                const formattedDate = tradeTime.toLocaleDateString();
+
+                row.innerHTML = `
+                    <td>${formattedDate} ${formattedTime}</td>
+                    <td>${trade.symbol}</td>
+                    <td><span class="badge ${badgeClass}">${trade.type ? trade.type.replace('_', ' ') : 'N/A'}</span></td>
+                    <td>$${trade.strike || 'N/A'}</td>
+                    <td>$${trade.premium || 0} (${trade.premium_pct || 0}%)</td>
+                `;
+                tradesTable.appendChild(row);
+            });
+
+            // Update premium chart
+            const symbols = Object.keys(data.positions);
+            premiumChart.data.labels = symbols;
+            premiumChart.data.datasets[0].data = symbols.map(
+                sym => parseFloat(data.positions[sym].premiums || 0)
+            );
+            premiumChart.update();
+
+            // Update status chart
+            const statusCounts = {
+                'Puts Sold': 0,
+                'Assigned': 0,
+                'Calls Sold': 0,
+                'Call Assigned': 0
+            };
+
+            Object.values(data.positions).forEach(position => {
+                switch(position.state) {
+                    case 'PUT_SOLD':
+                        statusCounts['Puts Sold']++;
+                        break;
+                    case 'ASSIGNED':
+                        statusCounts['Assigned']++;
+                        break;
+                    case 'CALL_SOLD':
+                        statusCounts['Calls Sold']++;
+                        break;
+                    case 'CALL_ASSIGNED':
+                        statusCounts['Call Assigned']++;
+                        break;
+                }
+            });
+
+            statusChart.data.datasets[0].data = [
+                statusCounts['Puts Sold'],
+                statusCounts['Assigned'],
+                statusCounts['Calls Sold'],
+                statusCounts['Call Assigned']
+            ];
+            statusChart.update();
+
+            // Update symbols container
+            const symbolsContainer = document.getElementById('symbolsContainer');
+            symbolsContainer.innerHTML = '';
+
+            data.config.underlying_symbols.forEach(symbol => {
+                const isActive = symbol in data.positions;
+                const symbolEl = document.createElement('div');
+                symbolEl.className = `badge ${isActive ? 'bg-primary' : 'bg-light text-dark'}`;
+                symbolEl.style.fontSize = '1rem';
+                symbolEl.style.padding = '8px 12px';
+                symbolEl.textContent = symbol;
+                symbolsContainer.appendChild(symbolEl);
+            });
+        }
+    </script>
+    <div class="container mt-4">
+    <div class="row mb-4">
+        <div class="col-md-12">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between">
+                    <h5>Premium-Optimized Options Wheel Dashboard</h5>
+                    <div>
+                        <span id="lastUpdated" class="badge bg-secondary"></span>
+                        <button id="refreshBtn" class="btn btn-sm btn-primary ms-2">
+                            <i class="bi bi-arrow-clockwise"></i> Refresh
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Summary Cards -->
+    <div class="row mb-4">
+        <div class="col-md-2">
+            <div class="card text-white bg-primary">
+                <div class="card-body">
+                    <h6 class="card-title">Active Positions</h6>
+                    <div class="d-flex justify-content-between">
+                        <h2 id="activePositions">0</h2>
+                        <span>/</span>
+                        <h2 id="maxPositions">0</h2>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <!-- Add other summary cards similarly -->
+    </div>
+
+    <!-- Charts -->
+    <div class="row mb-4">
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header">Premium Collected</div>
+                <div class="card-body">
+                    <canvas id="premiumChart"></canvas>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header">Position Status</div>
+                <div class="card-body">
+                    <canvas id="statusChart"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Positions Table -->
+    <div class="row mb-4">
+        <div class="col-md-12">
+            <div class="card">
+                <div class="card-header">Current Positions</div>
+                <div class="card-body">
+                    <table class="table table-striped" id="positionsTable">
+                        <thead>
+                            <tr>
+                                <th>Symbol</th>
+                                <th>Type</th>
+                                <th>Strike</th>
+                                <th>Premium</th>
+                                <th>State</th>
+                                <th>DTE</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+</body>
+</html>
